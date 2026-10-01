@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=r"C:\Users\Yeshwanth\Downloads\copilot-dashboard (1)\.env")
+load_dotenv(dotenv_path=r"../.env")
 
 DB_URL = os.getenv("DATABASE_URL")
 SEAT_PRICE = float(os.getenv("SEAT_PRICE", "30"))
