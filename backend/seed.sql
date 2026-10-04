@@ -14,10 +14,24 @@ SELECT CURRENT_DATE, 30, 'user'||i||'@corp.com', 'User '||i, NULL,
   (random()*f*250)::int, (random()*f*120)::int
 FROM (SELECT i, power(random(),.6) f FROM generate_series(1,280) i) t;
 
-INSERT INTO copilot_user_count_summary
-SELECT CURRENT_DATE, 30, p, 280, (280*s)::int
-FROM (VALUES ('any_app',.62),('chat',.55),('teams',.4),('word',.3),('excel',.2),('powerpoint',.15),('onenote',.08)) v(p,s);
+-- Summary: one row for the latest refresh (D30). Same numbers as the user rows above, roughly.
+INSERT INTO copilot_user_count_summary (report_refresh_date, report_period,
+  microsoft_teams_enabled_users, microsoft_teams_active_users, word_enabled_users, word_active_users,
+  powerpoint_enabled_users, powerpoint_active_users, outlook_enabled_users, outlook_active_users,
+  excel_enabled_users, excel_active_users, onenote_enabled_users, onenote_active_users,
+  loop_enabled_users, loop_active_users, any_app_enabled_users, any_app_active_users,
+  copilot_chat_enabled_users, copilot_chat_active_users)
+VALUES (CURRENT_DATE, 30, 280, 112, 280, 84, 280, 42, 280, 126, 280, 56, 280, 22, 280, 14, 280, 174, 280, 154);
 
-INSERT INTO copilot_user_count_trend
-SELECT CURRENT_DATE, d::date, 'any_app', 280, (280*(0.25+0.4*(d::date-(CURRENT_DATE-90))/90.0))::int
-FROM generate_series(CURRENT_DATE-90, CURRENT_DATE, '1 day') d;
+-- Trend: 90 days of daily pulls (D30 report); each row's refresh date is the day it was pulled.
+INSERT INTO copilot_user_count_trend (report_refresh_date, report_date,
+  microsoft_teams_enabled_users, microsoft_teams_active_users, word_enabled_users, word_active_users,
+  powerpoint_enabled_users, powerpoint_active_users, outlook_enabled_users, outlook_active_users,
+  excel_enabled_users, excel_active_users, onenote_enabled_users, onenote_active_users,
+  loop_enabled_users, loop_active_users, any_app_enabled_users, any_app_active_users,
+  copilot_chat_enabled_users, copilot_chat_active_users, report_period)
+SELECT d::date, d::date,
+  280, (a*.7)::int, 280, (a*.5)::int, 280, (a*.25)::int, 280, (a*.45)::int,
+  280, (a*.3)::int, 280, (a*.1)::int, 280, (a*.05)::int, 280, a, 280, (a*.8)::int, 30
+FROM (SELECT d, (280*(0.25+0.4*(d::date-(CURRENT_DATE-90))/90.0))::int AS a
+      FROM generate_series(CURRENT_DATE-90, CURRENT_DATE, '1 day') d) t;

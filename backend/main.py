@@ -1,6 +1,7 @@
 """Copilot usage dashboard API.  Run: uvicorn main:app --reload"""
 import os
 from datetime import timedelta
+from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query
@@ -8,7 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=r"../.env")
+
+# Reads the project-root .env, then backend/.env (variables already set in the shell win).
+HERE = Path(__file__).resolve().parent
+load_dotenv(HERE.parent / ".env")
+load_dotenv(HERE / ".env")
 
 DB_URL = os.getenv("DATABASE_URL")
 SEAT_PRICE = float(os.getenv("SEAT_PRICE", "30"))
@@ -49,15 +54,21 @@ def ratio(a, b, digits=1):
     return round(100.0 * a / b, digits) if b else 0
 
 
+@app.get("/api/health")
+async def health():
+    await rows("SELECT 1")
+    return {"status": "ok"}
+
+
 @app.get("/api/meta")
 async def meta():
     """Dates the data is current to (Microsoft reports lag about 2 days)."""
     r = (await rows("""
-        SELECT (SELECT MAX(report_refresh_date) FROM copilot_user_usage WHERE report_period = 30) AS usage_date,
+        SELECT (SELECT MAX(report_refresh_date) FROM copilot_user_usage WHERE report_period = %(p)s) AS usage_date,
                (SELECT MAX(report_date) FROM copilot_user_count_trend
-                 WHERE product = 'any_app' AND active_users IS NOT NULL) AS trend_date,
+                 WHERE report_period = %(p)s AND any_app_active_users IS NOT NULL) AS trend_date,
                (SELECT MAX(report_refresh_date) FROM copilot_user_count_summary
-                 WHERE report_period = %s) AS summary_date""", (SUMMARY_PERIOD,)))[0]
+                 WHERE report_period = %(p)s) AS summary_date""", {"p": SUMMARY_PERIOD}))[0]
     return {**r, "seat_price": SEAT_PRICE}
 
 
@@ -71,15 +82,18 @@ async def kpis(dept: str | None = None):
           COUNT(*) FILTER (WHERE status = 'Never used') AS never,
           COALESCE(SUM(prompts_work), 0) AS prompts_work, COALESCE(SUM(prompts_web), 0) AS prompts_web
         FROM v_user_latest WHERE {SCOPE}""", {"dept": dept}))[0]
-    purchased = await rows(
-        """SELECT enabled_users FROM copilot_user_count_summary
-           WHERE product = 'any_app' AND report_period = %s
+    summary = await rows(
+        """SELECT any_app_enabled_users, any_app_active_users FROM copilot_user_count_summary
+           WHERE report_period = %s
            ORDER BY report_refresh_date DESC LIMIT 1""", (SUMMARY_PERIOD,))
     lic, act = r["licensed"], r["active"]
     prompts = r["prompts_work"] + r["prompts_web"]
     return {
         **r, "seat_price": SEAT_PRICE,
-        "purchased_seats": purchased[0]["enabled_users"] if purchased else None,
+        # Microsoft's own tenant-wide totals, for cross-checking the numbers computed from user rows
+        "purchased_seats": summary[0]["any_app_enabled_users"] if summary else None,
+        "summary_active": summary[0]["any_app_active_users"] if summary else None,
+        "summary_period": SUMMARY_PERIOD,
         "idle": lic - act, "mau": act,
         "utilization_pct": ratio(act, lic),
         "monthly_spend": lic * SEAT_PRICE,
@@ -94,18 +108,20 @@ async def trend(grain: str = "week", periods: int = Query(12, ge=2, le=36)):
     Anchored to the newest date in the table, not today's date, so lagging data is never dropped."""
     grain = grain if grain in ("week", "month") else "week"
     as_of = (await rows("""SELECT MAX(report_date) AS d FROM copilot_user_count_trend
-                           WHERE product = 'any_app' AND active_users IS NOT NULL"""))[0]["d"]
+                           WHERE report_period = %s AND any_app_active_users IS NOT NULL""",
+                        (SUMMARY_PERIOD,)))[0]["d"]
     if as_of is None:
         return {"as_of": None, "grain": grain, "rows": []}
     data = await rows(f"""
         SELECT * FROM (
           SELECT DISTINCT ON (date_trunc('{grain}', report_date))
                  date_trunc('{grain}', report_date)::date AS period_start,
-                 report_date AS last_day, enabled_users AS enabled, active_users AS active
+                 report_date AS last_day,
+                 any_app_enabled_users AS enabled, any_app_active_users AS active
           FROM copilot_user_count_trend
-          WHERE product = 'any_app' AND active_users IS NOT NULL
+          WHERE report_period = %s AND any_app_active_users IS NOT NULL
           ORDER BY date_trunc('{grain}', report_date), report_date DESC
-        ) t ORDER BY period_start DESC LIMIT %s""", (periods,))
+        ) t ORDER BY period_start DESC LIMIT %s""", (SUMMARY_PERIOD, periods))
     data.reverse()
     for d in data:
         d["utilization_pct"] = ratio(d["active"], d["enabled"])

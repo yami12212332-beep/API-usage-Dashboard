@@ -11,13 +11,37 @@ CREATE TABLE IF NOT EXISTS copilot_user_usage (
   prompts_work int, prompts_web int,
   PRIMARY KEY (report_refresh_date, report_period, user_principal_name));
 
+-- getMicrosoft365CopilotUserCountSummary (CSV header order). One row per refresh and period.
+-- Header "Microsoft Teams Enabled Users" -> microsoft_teams_enabled_users, "PowerPoint" -> powerpoint, "OneNote" -> onenote.
 CREATE TABLE IF NOT EXISTS copilot_user_count_summary (
-  report_refresh_date date, report_period int, product text, enabled_users int, active_users int,
-  PRIMARY KEY (report_refresh_date, report_period, product));
+  report_refresh_date date, report_period int,
+  microsoft_teams_enabled_users int, microsoft_teams_active_users int,
+  word_enabled_users int, word_active_users int,
+  powerpoint_enabled_users int, powerpoint_active_users int,
+  outlook_enabled_users int, outlook_active_users int,
+  excel_enabled_users int, excel_active_users int,
+  onenote_enabled_users int, onenote_active_users int,
+  loop_enabled_users int, loop_active_users int,
+  any_app_enabled_users int, any_app_active_users int,
+  copilot_chat_enabled_users int, copilot_chat_active_users int,
+  PRIMARY KEY (report_refresh_date, report_period));
 
+-- getMicrosoft365CopilotUserCountTrend (CSV header order). One row per day and period.
+-- Key is (report_period, report_date): the same date appears in D7/D30/D90 pulls with different counts.
+-- Upsert on that key every day so history builds up beyond the days one pull returns.
 CREATE TABLE IF NOT EXISTS copilot_user_count_trend (
-  report_refresh_date date, report_date date, product text, enabled_users int, active_users int,
-  PRIMARY KEY (report_date, product));
+  report_refresh_date date, report_date date,
+  microsoft_teams_enabled_users int, microsoft_teams_active_users int,
+  word_enabled_users int, word_active_users int,
+  powerpoint_enabled_users int, powerpoint_active_users int,
+  outlook_enabled_users int, outlook_active_users int,
+  excel_enabled_users int, excel_active_users int,
+  onenote_enabled_users int, onenote_active_users int,
+  loop_enabled_users int, loop_active_users int,
+  any_app_enabled_users int, any_app_active_users int,
+  copilot_chat_enabled_users int, copilot_chat_active_users int,
+  report_period int,
+  PRIMARY KEY (report_period, report_date));
 
 -- One row per licensed user from the latest snapshot. "Active" = any app used within 28 days of the refresh date.
 CREATE OR REPLACE VIEW v_user_latest AS
